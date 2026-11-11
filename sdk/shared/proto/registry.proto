@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2024-2026 CloudSlash Contributors
+
+syntax = "proto3";
+
+package cloudslash.registry.v1;
+
+option go_package = "github.com/DrSkyle/cloudslash-plugin-sdk/shared/registryproto";
+
+import "google/api/annotations.proto";
+
+// Registry is the plugin distribution service. It indexes plugins hosted in
+// their authors' own GitHub repositories (npm-style: the manifest lives in the
+// repo, the registry only indexes and pins it) and serves resolution, search,
+// update checks, and publishing to the CLI and to registry.cloudslash.dev.
+//
+// The canonical deployment is the CloudSlash backend serving BOTH faces from
+// one implementation:
+//   - native gRPC for the CLI (grpc.cloudslash.dev)
+//   - transcoded HTTP/JSON via grpc-gateway for the registry website
+//     (api.cloudslash.dev/v1/registry/...), keeping existing SPA paths working.
+//
+// The CLI can also install plugins peer-to-peer from any GitHub repository
+// without the registry ('plugin install github:owner/repo').
+service Registry {
+  // Browse/search the index. Public.
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = { get: "/v1/registry/plugins" };
+  }
+
+  // One plugin's index record. Public.
+  rpc GetPlugin(GetPluginRequest) returns (Plugin) {
+    option (google.api.http) = { get: "/v1/registry/plugins/{name}" };
+  }
+
+  // Version history. Public.
+  rpc GetVersions(GetVersionsRequest) returns (GetVersionsResponse) {
+    option (google.api.http) = { get: "/v1/registry/plugins/{name}/versions" };
+  }
+
+  // Install-time resolution: ref + platform -> concrete version, manifest,
+  // and the chosen asset. Public. This is the RPC `plugin install` calls.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+
+  // Publish / list a plugin from its GitHub repo. Auth: Clerk JWT via the
+  // "authorization" gRPC metadata key (Bearer token from `cloudslash login`).
+  // The server crawls the repo, validates plugin.json, pins integrity, and
+  // upserts the index.
+  rpc Publish(PublishRequest) returns (PublishResponse) {
+    option (google.api.http) = {
+      post: "/v1/registry/plugins"
+      body: "*"
+    };
+  }
+
+  // Given the installed set, return available updates. Public.
+  // Called by `plugin outdated` and before scans (advisory notice only).
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse);
+
+  // Best-effort install telemetry (drives download counts). Public.
+  rpc ReportInstall(ReportInstallRequest) returns (ReportInstallResponse);
+}
+
+// ---------- Shared messages ----------
+
+// Person identifies a plugin author.
+message Person {
+  string name = 1;
+  string url = 2; // homepage, GitHub profile, etc.
+}
+
+// Asset is one downloadable platform artifact declared in a plugin manifest.
+message Asset {
+  string platform = 1; // "darwin/arm64", "linux/amd64", ...
+  string url = 2;      // GitHub Release URL (canonical) or registry mirror
+  string sha256 = 3;   // hex digest of the downloaded archive
+  int64 size_bytes = 4;
+}
+
+// Manifest is the structured mirror of the manifest v2 (plugin.json) core
+// fields. raw_json always carries the full original manifest so
+// unknown/open-ended fields survive the round trip.
+message Manifest {
+  int32 schema_version = 1; // always 2
+  string name = 2;          // unique slug, [a-z0-9-]
+  string version = 3;       // semver
+  string type = 4;          // open-ended: provider | heuristic | policy-pack | ...
+  string description = 5;
+  Person author = 6;
+  string homepage = 7;
+  repeated string tags = 8;
+  string cloudslash_min_version = 9;
+  string source = 10; // "github:owner/repo"
+  repeated Asset assets = 11;
+  bytes raw_json = 12; // full plugin.json content
+}
+
+// Plugin is one indexed plugin record.
+message Plugin {
+  string name = 1;           // unique slug
+  string type = 2;
+  string latest_version = 3;
+  string description = 4;
+  Person author = 5;
+  repeated string tags = 6;
+  int64 downloads = 7; // install-report counter
+  string listed_at = 8; // RFC3339
+  string updated_at = 9;
+  string source = 10;   // canonical repo, "github:owner/repo"
+  string details_url = 11; // https://registry.cloudslash.dev/plugin/<name>
+}
+
+// ---------- Search ----------
+
+message SearchRequest {
+  string q = 1;             // free text
+  string type = 2;          // filter: "provider", "policy-pack", ...
+  repeated string tags = 3;
+  string sort = 4;          // "relevance" | "downloads" | "updated" | "newest"
+  int32 page = 5;
+  int32 page_size = 6;
+}
+
+message SearchResponse {
+  repeated Plugin plugins = 1;
+  int32 total = 2;
+  string next_page_token = 3;
+}
+
+// ---------- GetPlugin / GetVersions ----------
+
+message GetPluginRequest {
+  string name = 1;
+}
+
+message GetVersionsRequest {
+  string name = 1;
+  int32 limit = 2;
+}
+
+message GetVersionsResponse {
+  message VersionEntry {
+    string version = 1;
+    string released_at = 2; // RFC3339
+    bool yanked = 3;
+  }
+  repeated VersionEntry versions = 1;
+}
+
+// ---------- Resolve ----------
+
+message ResolveRequest {
+  // Accepted ref forms:
+  //   "aws"                    -> latest satisfying CLI compat
+  //   "aws@^2.0.0"             -> semver range
+  //   "github:owner/repo"      -> index lookup by source
+  //   "github:owner/repo@v2.1.0"
+  string ref = 1;
+  string platform = 2;     // runtime.GOOS/GOARCH of the requester
+  string cli_version = 3;  // for cloudslash_min_version filtering
+}
+
+message ResolveResponse {
+  string resolved_version = 1;
+  Manifest manifest = 2;
+  Asset asset = 3; // chosen for ResolveRequest.platform
+  // Registry-pinned digest of the manifest content at index time. The CLI
+  // verifies the received manifest against this; a mismatch means
+  // registry/GitHub divergence and aborts the install.
+  string manifest_sha256 = 4;
+  bool verified_source = 5; // true if the crawler re-validated the repo recently
+}
+
+// ---------- Publish ----------
+
+message PublishRequest {
+  string source = 1;            // "github:owner/repo"
+  string expected_version = 2;  // optional guard: fail if the repo moved on
+}
+
+message PublishResponse {
+  string name = 1;
+  string version = 2;
+  string status = 3; // "published" | "updated" | "pending_review"
+}
+
+// ---------- CheckUpdates ----------
+
+message CheckUpdatesRequest {
+  message Installed {
+    string name = 1;
+    string version = 2;
+  }
+  repeated Installed installed = 1;
+  string cli_version = 2;
+}
+
+message CheckUpdatesResponse {
+  message Update {
+    string name = 1;
+    string current = 2;
+    string latest = 3;
+    bool breaking = 4; // latest major > current major
+    string changelog_url = 5;
+  }
+  repeated Update updates = 1;
+}
+
+// ---------- ReportInstall ----------
+
+message ReportInstallRequest {
+  string name = 1;
+  string version = 2;
+  string source = 3; // "registry" | "github"
+}
+
+message ReportInstallResponse {}

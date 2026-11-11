@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package cloudslash.provider;
+
+option go_package = "github.com/DrSkyle/cloudslash-plugin-sdk/shared/proto";
+
+// ViewModel represents a UI information model for TUI views.
+message ViewModel {
+  oneof content {
+    TableView table_view = 1;
+    FormView  form_view = 2;
+    TextView  text_view = 3;
+  }
+}
+
+// TableView presents data in a tabular format.
+message TableView {
+  repeated string headers = 1;
+  repeated Row rows = 2;
+  string footer = 3;
+}
+
+message Row {
+  repeated string cells = 1;
+}
+
+// FormView presents a collection of input fields.
+message FormView {
+  repeated FormField fields = 1;
+}
+
+message FormField {
+  string label = 1;
+  string value = 2;
+  string type = 3; // "text", "number", "boolean", "code"
+  bool read_only = 4;
+}
+
+// TextView presents text content, optionally with syntax highlighting.
+message TextView {
+  string content = 1;
+  string highlight_language = 2; // for code blocks (e.g., "json", "yaml", "go")
+}
+
+// The input configuration given to the plugin
+message ScanRequest {
+    map<string, string> config = 1; // e.g., "region": "us-east-1"
+}
+
+// The generic CloudSlash Resource Name Node
+message Node {
+    string crn = 1;          // e.g., "crn:devi:aws:us-east-1:ec2:instance:123:i-abc"
+    bytes properties = 2;    // JSON encoded resource metadata
+    double cost = 3;         // Current monthly cost
+}
+
+// The directional graph edge
+message Edge {
+    string source_crn = 1;
+    string target_crn = 2;
+    string relation = 3;     // e.g., "AttachedTo", "SecuredBy"
+}
+
+// The chunked response
+message ScanResponse {
+    repeated Node nodes = 1;
+    repeated Edge edges = 2;
+    repeated Finding findings = 3; // provider-run heuristic waste findings
+}
+
+// A waste-detection finding produced by provider-side heuristics running inside
+// the plugin (where the cloud SDK lives).
+message Finding {
+    string crn = 1;
+    bool   is_waste = 2;
+    int32  risk_score = 3; // 0-100
+    string reason = 4;
+    string suggested_action = 5;
+    double projected_savings_usd = 6;
+    map<string, string> annotations = 7;
+}
+
+message HandshakeRequest {
+    string core_version = 1;
+}
+
+message HandshakeResponse {
+    bool compatible = 1;
+    string plugin_version = 2;
+    string message = 3;
+}
+
+// S.A.U.: Quarantine Protocol
+message QuarantineRequest {
+  string crn = 1;
+  map<string, string> properties = 2; // The resource state S.A.U. captured
+}
+
+message QuarantineResponse {
+    bool success = 1;
+    map<string, string> manifest = 2; // Data needed to undo the quarantine
+}
+
+// S.A.U.: Reversibility Protocol
+message ReversibilityRequest {
+    string crn = 1;
+    map<string, string> properties = 2;
+}
+
+message ReversibilityProof {
+    bool safe = 1;
+    string reason = 2;
+}
+
+// PREFLIGHT: Credential Verification Protocol
+// The core CLI calls this on each loaded plugin before starting a scan.
+// The plugin (running as its own process) checks its own credentials and
+// returns a structured result. The core CLI never touches cloud SDKs directly.
+message PreflightRequest {}
+
+message PreflightResponse {
+    bool   ok       = 1; // false if credentials are missing or expired
+    string error    = 2; // human-readable guidance if !ok (e.g. "run aws sso login")
+    string provider = 3; // e.g. "AWS", "GCP", "DigitalOcean"
+}
+
+// RenderDetail: Returns a ViewModel and available Actions for a resource.
+// Used by the TUI to display resource details and action menus.
+message RenderDetailRequest {
+    string resource_id = 1;   // The resource ID (e.g., instance ID, bucket name)
+    string resource_type = 2; // The resource type (e.g., "ec2", "s3", "rds")
+    string pane_context = 3;  // "detail", "overview", or "actions"
+}
+
+message RenderDetailResponse {
+    ViewModel view = 1;
+    repeated Action actions = 2;
+}
+
+// Action represents an available action a user can perform on a resource.
+message Action {
+    string id = 1;          // Unique action identifier (e.g., "stop", "delete", "resize")
+    string label = 2;       // User-facing label (e.g., "Stop Instance")
+    string description = 3; // Brief description of what the action does
+    bool dangerous = 4;     // True if action is destructive/irreversible
+}
+
+message GetMetadataRequest {}
+
+// Capability represents a plugin capability with version information.
+message Capability {
+    string name = 1;                 // e.g., "discovery", "remediation", "rightsize"
+    string version = 2;              // e.g., "1.0.0", "2.0.0"
+    bool available = 3;              // Whether the capability is currently available
+    string unavailable_reason = 4;   // Reason if capability is not available
+}
+
+// HealthStatus represents the health state of a plugin.
+message HealthStatus {
+    enum State {
+        HEALTHY = 0;
+        DEGRADED = 1;
+        UNHEALTHY = 2;
+        STARTING = 3;
+        STOPPING = 4;
+    }
+    State state = 1;                  // Health state
+    string message = 2;               // Optional message describing the state
+    int64 last_check_timestamp = 3;   // Timestamp of last health check (Unix epoch ms)
+}
+
+message GetMetadataResponse {
+   string plugin_name = 1;           // Plugin binary name (e.g., "cloudslash-plugin-aws")
+   string plugin_version = 2;        // Plugin semantic version
+   string provider_name = 3;         // Cloud provider name (e.g., "AWS", "GCP")
+   repeated Capability capabilities = 4;
+   HealthStatus health = 5;          // Current health status
+   map<string, string> metadata = 6; // Additional plugin-specific metadata
+}
+
+message GetPricingRequest {
+    string region = 1;
+    string service = 2;
+}
+
+message PricingResponse {
+    map<string, double> prices = 1;
+}
+
+message GetLaddersRequest {
+    string resource_kind = 1;
+}
+
+message GetLaddersResponse {
+    map<string, string> ladders = 1;
+}
+
+// The Service Contract
+service Provider {
+    // Handshake performs an initial compatibility check.
+    rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+    // A server-side stream allows the plugin to yield results as it finds them
+    rpc Scan(ScanRequest) returns (stream ScanResponse);
+
+    // S.A.U. calls this. The Plugin executes the domain-specific quarantine logic.
+    rpc ApplyQuarantine(QuarantineRequest) returns (QuarantineResponse);
+
+    // The Plugin tells S.A.U. if this specific resource is safe to touch.
+    rpc CheckReversibility(ReversibilityRequest) returns (ReversibilityProof);
+
+    // PreflightCheck: plugin verifies its own cloud credentials before scan.
+    // The core CLI calls this on every loaded plugin. If !ok, the CLI prints
+    // the error and exits — without any knowledge of which cloud is involved.
+    rpc PreflightCheck(PreflightRequest) returns (PreflightResponse);
+    
+    // GetMetadata: Returns plugin metadata for capability-based routing.
+    rpc GetMetadata(GetMetadataRequest) returns (GetMetadataResponse);
+    
+    // GetPricing: Returns pricing data for a specific region/service.
+    rpc GetPricing(GetPricingRequest) returns (PricingResponse);
+    
+    // GetLadders: Returns right-sizing ladders for instance type hierarchies.
+    rpc GetLadders(GetLaddersRequest) returns (GetLaddersResponse);
+
+    // RenderDetail: Returns a ViewModel and available Actions for a resource.
+    rpc RenderDetail(RenderDetailRequest) returns (RenderDetailResponse);
+}
+
+// REMEDIATOR: Active remediation extension.
+// Plugins that support active remediation implement this additional service.
+// Plugins that only scan simply do not register it (or embed
+// UnimplementedRemediatorServer) and degrade gracefully to scan-only mode.
+message RemediateRequest {
+    string              crn        = 1;  // Target resource CRN
+    string              action     = 2;  // "stop", "delete", "throttle", "pause", etc.
+    map<string, string> properties = 3;  // Additional context (region, credentials)
+    bool                dry_run    = 4;  // Validate without executing
+}
+
+message RemediateResponse {
+    bool                success  = 1;
+    string              status   = 2;  // "stopped", "deleted", "throttled", etc.
+    string              error    = 3;  // Empty on success
+    map<string, string> snapshot = 4;  // Snapshot IDs for rollback (ami_id, snapshot_id, ...)
+}
+
+service Remediator {
+    // Execute a remediation action on a cloud resource.
+    rpc Remediate(RemediateRequest) returns (RemediateResponse);
+}

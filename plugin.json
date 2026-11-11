@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "name": "gcp",
+  "version": "1.0.0",
+  "type": "provider",
+  "description": "Google Cloud data-source plugin for CloudSlash — read-only compute, networking, and storage inventory",
+  "author": {
+    "name": "DrSkyle"
+  },
+  "tags": [
+    "gcp",
+    "google-cloud",
+    "infrastructure"
+  ],
+  "cloudslash_min_version": "2.0.0",
+  "source": "github:wearedevilabs/CloudSlash-Workspace",
+  "entrypoints": {
+    "binary": {
+      "command": "cloudslash-plugin-gcp",
+      "protocol": "grpc+goplugin"
+    }
+  }
+}

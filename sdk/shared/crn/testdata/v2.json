@@ -1,0 +1,20 @@
+{
+  "valid": [
+    {"raw":"crn:devi:aws:us-east-1:ec2:instance:123:i-1","source":"aws","scope":"us-east-1","service":"ec2","type":"instance","account":"123","id":"i-1"},
+    {"raw":"crn:devi:custom::service:type::id","source":"custom","scope":"","service":"service","type":"type","account":"","id":"id"},
+    {"raw":"crn:devi:lab:global:svc:kind:acct:a%3Ab","source":"lab","scope":"global","service":"svc","type":"kind","account":"acct","id":"a:b"},
+    {"raw":"crn:devi:lab:global:svc:kind:acct:a%2Fb","source":"lab","scope":"global","service":"svc","type":"kind","account":"acct","id":"a/b"},
+    {"raw":"crn:devi:lab:global:svc:kind:acct:%E9%9B%AA","source":"lab","scope":"global","service":"svc","type":"kind","account":"acct","id":"雪"}
+  ],
+  "invalid": [
+    "",
+    "crn:devi:aws:ec2:instance:123:i-1",
+    "crn:devi:aws:us-east-1:ec2:instance:123:a:b",
+    "crn:devi::scope:service:type:account:id",
+    "crn:devi:aws:scope::type:account:id",
+    "crn:devi:aws:scope:service:type:account:",
+    "crn:devi:aws:scope:service:type:account:%ZZ",
+    "crn:devi:aws:scope:service:type:account:%3a",
+    "crn:devi:aws:scope:service:type:account:%41"
+  ]
+}

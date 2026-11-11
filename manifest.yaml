@@ -1,0 +1,21 @@
+name: gcp
+version: 1.0.0
+type: plugin
+author: DrSkyle
+license: MIT
+description: Google Cloud data-source plugin for CloudSlash — read-only compute, networking, and storage inventory
+tags: [gcp, google-cloud, infrastructure]
+cloudslash_min_version: 2.0.0
+
+# Least-privilege read permissions used for discovery. The plugin never mutates.
+permissions:
+  gcp:
+    read:
+      - resourcemanager.projects.get
+      - compute.instances.list
+      - compute.disks.list
+      - compute.addresses.list
+      - compute.forwardingRules.list
+      - compute.networks.list
+      - compute.subnetworks.list
+      - storage.buckets.list

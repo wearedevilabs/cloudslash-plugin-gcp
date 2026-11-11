@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudslash.dev/schemas/plugin-manifest-v2.json",
+  "title": "CloudSlash Plugin Manifest v2 (plugin.json)",
+  "description": "npm-style plugin manifest hosted in the plugin author's own GitHub repository. Anyone can make any plugin; 'provider' is just one type.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "version",
+    "type",
+    "description"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Open-ended: provider, heuristic, policy-pack, or anything else"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "homepage": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cloudslash_min_version": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^github:[^/]+/[^/]+$"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Base64 Ed25519 signature over canonical manifest JSON without this field"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "capability_contracts": {
+      "type": "object",
+      "description": "Safety and execution metadata for enabled capabilities. Capability names remain open-ended.",
+      "additionalProperties": {
+        "$ref": "#/$defs/capabilityContract"
+      }
+    },
+    "connections": {
+      "type": "array",
+      "description": "Plugin-defined, provider-neutral connection flows rendered by CloudSlash clients.",
+      "items": {
+        "$ref": "#/$defs/connectionMethod"
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Provider-scoped least-privilege IAM actions; opaque to the core",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "read": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "entrypoints": {
+      "type": "object",
+      "properties": {
+        "binary": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "type": "string",
+              "pattern": "^[^/\\\\]+$"
+            },
+            "protocol": {
+              "type": "string",
+              "enum": [
+                "grpc+goplugin"
+              ]
+            }
+          }
+        },
+        "hosted": {
+          "type": "object",
+          "required": [
+            "endpoint",
+            "protocol"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "pattern": "^grpcs://[^/?#]+$"
+            },
+            "protocol": {
+              "const": "grpcs+cloudslash"
+            }
+          }
+        },
+        "policies": {
+          "type": "string",
+          "description": "Glob of CEL rule files for policy-pack plugins"
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "platform",
+          "url",
+          "sha256"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+/[a-z0-9]+$"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "policy_profiles": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "schema",
+          "url",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 64
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+          },
+          "schema": {
+            "const": "cloudslash.analysis-profile/v1"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          }
+        }
+      }
+    },
+    "permission_documents": {
+      "type": "array",
+      "maxItems": 32,
+      "description": "Static provider-owned permission drafts. Exported verbatim, never executed or applied. Runtime validation enforces UTF-8 byte and aggregate limits and rejects unsafe control characters.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "provider",
+          "format",
+          "content"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 64
+          },
+          "provider": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 64
+          },
+          "format": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 64
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 262144
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capabilityContract": {
+      "type": "object",
+      "required": [
+        "version",
+        "effect",
+        "environments"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+        },
+        "effect": {
+          "type": "string",
+          "enum": [
+            "read",
+            "compute"
+          ]
+        },
+        "environments": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "local",
+              "hosted"
+            ]
+          }
+        }
+      }
+    },
+    "connectionMethod": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "flow",
+        "environments"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "string",
+          "enum": [
+            "form",
+            "oauth2",
+            "device-code",
+            "outbound-agent"
+          ]
+        },
+        "environments": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "local",
+              "hosted"
+            ]
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/connectionField"
+          }
+        }
+      }
+    },
+    "connectionField": {
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "type"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "secret",
+            "url",
+            "select",
+            "multiselect",
+            "boolean",
+            "json",
+            "file"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "generated": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "value",
+              "label"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
